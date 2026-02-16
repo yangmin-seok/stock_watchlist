@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -9,6 +10,14 @@ import pandas as pd
 from pykrx import stock
 
 FOREIGN_COLUMN_CANDIDATES = ["외국인합계", "외국인", "외국인투자자"]
+
+
+# pykrx internally uses pandas.replace in a way that emits a FutureWarning in recent pandas.
+warnings.filterwarnings(
+    "ignore",
+    message="Downcasting behavior in `replace` is deprecated",
+    category=FutureWarning,
+)
 
 
 @dataclass

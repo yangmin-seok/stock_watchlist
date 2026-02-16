@@ -65,3 +65,8 @@ python run.py
 5. 상위 400개 종목의 최근 20영업일 외국인 순매수 계산 후 내림차순 정렬
 6. 메일 본문에 watchlist 결과 + 400개 랭킹 포함
 7. watchlist 트리거만 SQLite 중복 방지 기록
+
+## SMTP 인증 오류(535) 트러블슈팅
+- `Username and Password not accepted` 오류가 나면 일반 계정 비밀번호가 아니라 **Google 앱 비밀번호(16자리)** 를 사용해야 합니다.
+- Google 계정에서 2단계 인증을 켠 후 앱 비밀번호를 생성해 `GMAIL_APP_PASSWORD`에 넣으세요.
+- 코드에서 공백은 자동 제거되지만, 값 자체가 앱 비밀번호가 아니면 인증 실패합니다.

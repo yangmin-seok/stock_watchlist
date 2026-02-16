@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from stockwatch.data import StockDataClient
 from stockwatch.formatters import TriggeredItem, make_body, make_subject
-from stockwatch.notifier import send_email
+from stockwatch.notifier import MailAuthenticationError, send_email
 from stockwatch.rules import evaluate_rule
 from stockwatch.state import AlertStateStore
 
@@ -127,17 +127,21 @@ def main() -> int:
 
     recipients = _split_recipients(alert_to)
     smtp_cfg = config["smtp"]
-    for to_addr in recipients:
-        send_email(
-            smtp_host=smtp_cfg["host"],
-            smtp_port=int(smtp_cfg["port"]),
-            use_starttls=bool(smtp_cfg.get("use_starttls", True)),
-            user=gmail_user,
-            app_password=gmail_app_password,
-            to_addr=to_addr,
-            subject=subject,
-            body=body,
-        )
+    try:
+        for to_addr in recipients:
+            send_email(
+                smtp_host=smtp_cfg["host"],
+                smtp_port=int(smtp_cfg["port"]),
+                use_starttls=bool(smtp_cfg.get("use_starttls", True)),
+                user=gmail_user,
+                app_password=gmail_app_password,
+                to_addr=to_addr,
+                subject=subject,
+                body=body,
+            )
+    except MailAuthenticationError as exc:
+        print(f"[{alert_date}] {exc}")
+        return 2
 
     for item in triggered_items:
         state.mark_sent(alert_date, item.ticker, item.rule_result.rule_id)
