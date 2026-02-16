@@ -35,6 +35,7 @@ class RankedForeignFlowItem:
     ticker: str
     name: str
     close: float
+    close_change: float
     net_sum: float
 
 
@@ -162,6 +163,18 @@ class StockDataClient:
         ohlcv = self.get_ohlcv(ticker=ticker, calendar_lookback_days=calendar_lookback_days)
         return float(ohlcv.iloc[-1]["종가"])
 
+    def get_latest_close_and_change(
+        self,
+        ticker: str,
+        calendar_lookback_days: int = 20,
+    ) -> tuple[float, float]:
+        ohlcv = self.get_ohlcv(ticker=ticker, calendar_lookback_days=calendar_lookback_days)
+        close = float(ohlcv.iloc[-1]["종가"])
+        if len(ohlcv) < 2:
+            return close, 0.0
+        prev_close = float(ohlcv.iloc[-2]["종가"])
+        return close, close - prev_close
+
     def summarize_foreign_net_only(
         self,
         ticker: str,
@@ -181,13 +194,15 @@ class StockDataClient:
         unit: str,
         calendar_lookback_days: int,
         window_trading_days: int,
+        universe_top_n: int | None = None,
     ) -> list[RankedForeignFlowItem]:
-        tickers = self.get_kospi_top_tickers(top_n)
+        universe_size = universe_top_n if universe_top_n is not None else top_n
+        tickers = self.get_kospi_top_tickers(universe_size)
         ranking: list[RankedForeignFlowItem] = []
 
         for ticker in tickers:
             name = stock.get_market_ticker_name(ticker)
-            close = self.get_latest_close(ticker)
+            close, close_change = self.get_latest_close_and_change(ticker)
             net_sum = self.summarize_foreign_net_only(
                 ticker=ticker,
                 unit=unit,
@@ -195,8 +210,14 @@ class StockDataClient:
                 window_trading_days=window_trading_days,
             )
             ranking.append(
-                RankedForeignFlowItem(ticker=ticker, name=name, close=close, net_sum=net_sum)
+                RankedForeignFlowItem(
+                    ticker=ticker,
+                    name=name,
+                    close=close,
+                    close_change=close_change,
+                    net_sum=net_sum,
+                )
             )
 
         ranking.sort(key=lambda item: item.net_sum, reverse=True)
-        return ranking
+        return ranking[:top_n]

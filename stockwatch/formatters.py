@@ -22,6 +22,11 @@ def format_number(value: float, unit: str) -> str:
     return f"{value:,.0f}주"
 
 
+def format_signed_won(value: float) -> str:
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:,.0f}원"
+
+
 def make_subject(triggered: Iterable[TriggeredItem], alert_date: str) -> str:
     items = list(triggered)
     if not items:
@@ -63,19 +68,20 @@ def make_ranking_body(
     ranking: Iterable[RankedForeignFlowItem],
     *,
     top_n: int,
+    universe_top_n: int,
     window_trading_days: int,
     unit: str,
 ) -> list[str]:
     rows = list(ranking)
     lines: list[str] = [
-        f"[KOSPI 상위 {top_n} 시총 종목] 최근 {window_trading_days}영업일 외국인 순매수 내림차순",
-        f"(표시: 종목명 | 현재가 | 외국인 순매수[{ '거래대금' if unit == 'value' else '거래량' }])",
+        f"[KOSPI 시총 상위 {universe_top_n}개 중 외국인 순매수 상위 {top_n}] 최근 {window_trading_days}영업일",
+        f"(표시: 종목명 | 현재가(전일대비) | 외국인 순매수[{ '거래대금' if unit == 'value' else '거래량' }])",
         "",
     ]
 
     for idx, item in enumerate(rows, start=1):
         lines.append(
-            f"{idx:>3}. {item.name} ({item.ticker}) | {item.close:,.0f}원 | {format_number(item.net_sum, unit)}"
+            f"{idx:>3}. {item.name} ({item.ticker}) | {item.close:,.0f}원 ({format_signed_won(item.close_change)}) | {format_number(item.net_sum, unit)}"
         )
 
     lines.append("")
@@ -88,6 +94,7 @@ def make_body(
     alert_date: str,
     *,
     ranking_top_n: int,
+    ranking_universe_top_n: int,
     ranking_window_trading_days: int,
     ranking_unit: str,
 ) -> str:
@@ -96,6 +103,7 @@ def make_body(
         make_ranking_body(
             ranking,
             top_n=ranking_top_n,
+            universe_top_n=ranking_universe_top_n,
             window_trading_days=ranking_window_trading_days,
             unit=ranking_unit,
         )
