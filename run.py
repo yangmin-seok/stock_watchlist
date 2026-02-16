@@ -94,34 +94,75 @@ def main() -> int:
 
     ranking_top_n = int(ranking_cfg["top_n"])
     ranking_universe_top_n = int(ranking_cfg.get("universe_top_n", ranking_top_n))
+    ranking_unit = str(ranking_cfg.get("unit", "value"))
+    ranking_window_days = int(ranking_cfg["window_trading_days"])
+    ranking_recent_days = int(ranking_cfg.get("recent_days", 5))
+    ranking_bold_threshold = float(ranking_cfg.get("recent_days_bold_threshold", 0))
 
-    ranking = client.build_kospi_foreign_flow_ranking(
+    foreign_ranking = client.build_kospi_flow_ranking(
         top_n=ranking_top_n,
         universe_top_n=ranking_universe_top_n,
-        unit=str(ranking_cfg.get("unit", "value")),
+        unit=ranking_unit,
         calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
-        window_trading_days=int(ranking_cfg["window_trading_days"]),
+        window_trading_days=ranking_window_days,
+        investor="foreign",
+        recent_days=ranking_recent_days,
     )
 
-    subject = make_subject(triggered_items, alert_date)
-    body = make_body(
+    institution_ranking = client.build_kospi_flow_ranking(
+        top_n=ranking_top_n,
+        universe_top_n=ranking_universe_top_n,
+        unit=ranking_unit,
+        calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
+        window_trading_days=ranking_window_days,
+        investor="institution",
+        recent_days=ranking_recent_days,
+    )
+
+    foreign_subject = make_subject(triggered_items, alert_date, flow_label="외국인수급")
+    foreign_body = make_body(
         triggered_items,
-        ranking,
+        foreign_ranking,
         alert_date,
+        investor_label="외국인",
         ranking_top_n=ranking_top_n,
         ranking_universe_top_n=ranking_universe_top_n,
-        ranking_window_trading_days=int(ranking_cfg["window_trading_days"]),
-        ranking_unit=str(ranking_cfg.get("unit", "value")),
+        ranking_window_trading_days=ranking_window_days,
+        ranking_unit=ranking_unit,
+        ranking_recent_days=ranking_recent_days,
+        ranking_recent_days_bold_threshold=ranking_bold_threshold,
+    )
+
+    institution_subject = make_subject(triggered_items, alert_date, flow_label="기관수급")
+    institution_body = make_body(
+        triggered_items,
+        institution_ranking,
+        alert_date,
+        investor_label="기관",
+        ranking_top_n=ranking_top_n,
+        ranking_universe_top_n=ranking_universe_top_n,
+        ranking_window_trading_days=ranking_window_days,
+        ranking_unit=ranking_unit,
+        ranking_recent_days=ranking_recent_days,
+        ranking_recent_days_bold_threshold=ranking_bold_threshold,
     )
 
     if errors:
-        body += "\n[경고] 일부 watchlist 종목 처리 중 오류:\n"
-        body += "\n".join(f"- {message}" for message in errors)
+        warning_block = "\n[경고] 일부 watchlist 종목 처리 중 오류:\n" + "\n".join(
+            f"- {message}" for message in errors
+        )
+        foreign_body += warning_block
+        institution_body += warning_block
 
     if args.dry_run:
-        print(subject)
+        print("=" * 80)
+        print(foreign_subject)
         print()
-        print(body)
+        print(foreign_body)
+        print("=" * 80)
+        print(institution_subject)
+        print()
+        print(institution_body)
         return 0
 
     gmail_user = os.getenv("GMAIL_USER")
@@ -141,8 +182,18 @@ def main() -> int:
                 user=gmail_user,
                 app_password=gmail_app_password,
                 to_addr=to_addr,
-                subject=subject,
-                body=body,
+                subject=foreign_subject,
+                body=foreign_body,
+            )
+            send_email(
+                smtp_host=smtp_cfg["host"],
+                smtp_port=int(smtp_cfg["port"]),
+                use_starttls=bool(smtp_cfg.get("use_starttls", True)),
+                user=gmail_user,
+                app_password=gmail_app_password,
+                to_addr=to_addr,
+                subject=institution_subject,
+                body=institution_body,
             )
     except MailAuthenticationError as exc:
         print(f"[{alert_date}] {exc}")
@@ -152,7 +203,7 @@ def main() -> int:
         state.mark_sent(alert_date, item.ticker, item.rule_result.rule_id)
 
     print(
-        f"[{alert_date}] Sent watchlist alerts={len(triggered_items)}, ranking items={len(ranking)}, recipients={len(recipients)}"
+        f"[{alert_date}] Sent watchlist alerts={len(triggered_items)}, foreign ranking items={len(foreign_ranking)}, institution ranking items={len(institution_ranking)}, recipients={len(recipients)}"
     )
     return 0
 
