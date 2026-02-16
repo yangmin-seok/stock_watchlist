@@ -92,8 +92,12 @@ def main() -> int:
             if args.strict:
                 raise
 
+    ranking_top_n = int(ranking_cfg["top_n"])
+    ranking_universe_top_n = int(ranking_cfg.get("universe_top_n", ranking_top_n))
+
     ranking = client.build_kospi_foreign_flow_ranking(
-        top_n=int(ranking_cfg["top_n"]),
+        top_n=ranking_top_n,
+        universe_top_n=ranking_universe_top_n,
         unit=str(ranking_cfg.get("unit", "value")),
         calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
         window_trading_days=int(ranking_cfg["window_trading_days"]),
@@ -104,7 +108,8 @@ def main() -> int:
         triggered_items,
         ranking,
         alert_date,
-        ranking_top_n=int(ranking_cfg["top_n"]),
+        ranking_top_n=ranking_top_n,
+        ranking_universe_top_n=ranking_universe_top_n,
         ranking_window_trading_days=int(ranking_cfg["window_trading_days"]),
         ranking_unit=str(ranking_cfg.get("unit", "value")),
     )
