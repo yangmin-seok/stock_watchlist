@@ -93,6 +93,25 @@ bash scripts/setup_cron.sh remove
 - 로그 파일: `logs/stockwatch_cron.log`
 - `PYTHON_BIN` 환경변수로 파이썬 경로를 강제할 수 있습니다.
 
+
+## 자동 실행(크론)
+평일 장 마감 후 자동 실행하려면 아래 스크립트를 사용하세요.
+
+```bash
+# 기본: 평일 16:10(KST) 실행 등록
+bash scripts/setup_cron.sh install
+
+# 시간 지정(예: 평일 18:05)
+bash scripts/setup_cron.sh install 18:05
+
+# 등록 제거
+bash scripts/setup_cron.sh remove
+```
+
+- 크론 등록 시 실행 명령: `python run.py`
+- 로그 파일: `logs/stockwatch_cron.log`
+- `PYTHON_BIN` 환경변수로 파이썬 경로를 강제할 수 있습니다.
+
 ## SMTP 인증 오류(535) 트러블슈팅
 - `Username and Password not accepted` 오류가 나면 일반 계정 비밀번호가 아니라 **Google 앱 비밀번호(16자리)** 를 사용해야 합니다.
 - Google 계정에서 2단계 인증을 켠 후 앱 비밀번호를 생성해 `GMAIL_APP_PASSWORD`에 넣으세요.
