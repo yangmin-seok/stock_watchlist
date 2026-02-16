@@ -21,6 +21,14 @@ class ForeignFlowSummary:
     streak_net_buy_days: int
 
 
+@dataclass
+class RankedForeignFlowItem:
+    ticker: str
+    name: str
+    close: float
+    net_sum: float
+
+
 class StockDataClient:
     def __init__(self, timezone: str, rate_limit_sec: float = 0.0):
         self.tz = ZoneInfo(timezone)
@@ -132,3 +140,54 @@ class StockDataClient:
             net_sum=net_sum,
             streak_net_buy_days=streak,
         )
+
+    def get_kospi_top_tickers(self, top_n: int) -> list[str]:
+        market_cap = stock.get_market_cap_by_ticker(self._today_str(), market="KOSPI")
+        self._sleep()
+        if market_cap.empty:
+            raise ValueError("Empty market cap dataframe for KOSPI")
+        ranked = market_cap.sort_values(by="시가총액", ascending=False).head(top_n)
+        return ranked.index.tolist()
+
+    def get_latest_close(self, ticker: str, calendar_lookback_days: int = 20) -> float:
+        ohlcv = self.get_ohlcv(ticker=ticker, calendar_lookback_days=calendar_lookback_days)
+        return float(ohlcv.iloc[-1]["종가"])
+
+    def summarize_foreign_net_only(
+        self,
+        ticker: str,
+        unit: str,
+        calendar_lookback_days: int,
+        window_trading_days: int,
+    ) -> float:
+        net_df = self._retry_empty_df(ticker, calendar_lookback_days, unit=unit)
+        if net_df.empty:
+            return 0.0
+        col = self._pick_foreign_column(net_df)
+        return float(net_df[col].tail(window_trading_days).sum())
+
+    def build_kospi_foreign_flow_ranking(
+        self,
+        top_n: int,
+        unit: str,
+        calendar_lookback_days: int,
+        window_trading_days: int,
+    ) -> list[RankedForeignFlowItem]:
+        tickers = self.get_kospi_top_tickers(top_n)
+        ranking: list[RankedForeignFlowItem] = []
+
+        for ticker in tickers:
+            name = stock.get_market_ticker_name(ticker)
+            close = self.get_latest_close(ticker)
+            net_sum = self.summarize_foreign_net_only(
+                ticker=ticker,
+                unit=unit,
+                calendar_lookback_days=calendar_lookback_days,
+                window_trading_days=window_trading_days,
+            )
+            ranking.append(
+                RankedForeignFlowItem(ticker=ticker, name=name, close=close, net_sum=net_sum)
+            )
+
+        ranking.sort(key=lambda item: item.net_sum, reverse=True)
+        return ranking

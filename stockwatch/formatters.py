@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from stockwatch.data import ForeignFlowSummary
+from stockwatch.data import ForeignFlowSummary, RankedForeignFlowItem
 from stockwatch.rules import RuleResult
 
 
@@ -25,24 +25,21 @@ def format_number(value: float, unit: str) -> str:
 def make_subject(triggered: Iterable[TriggeredItem], alert_date: str) -> str:
     items = list(triggered)
     if not items:
-        return f"[StockWatch] {alert_date} 트리거 없음"
+        return f"[StockWatch] {alert_date} Watchlist/외국인수급 리포트"
     names = ", ".join(item.name for item in items[:3])
     suffix = "" if len(items) <= 3 else f" 외 {len(items) - 3}건"
-    return f"[StockWatch] {alert_date} {names}{suffix}"
+    return f"[StockWatch] {alert_date} Watchlist {names}{suffix} + 외국인수급"
 
 
-def make_body(triggered: Iterable[TriggeredItem], alert_date: str) -> str:
+def make_watchlist_body(triggered: Iterable[TriggeredItem], alert_date: str) -> list[str]:
     items = list(triggered)
+    lines: list[str] = [f"StockWatch EOD 알림 ({alert_date})", ""]
+
     if not items:
-        return f"{alert_date} 기준 트리거가 없습니다."
+        lines.extend(["[Watchlist] 조건 충족 종목 없음", ""])
+        return lines
 
-    lines: list[str] = [
-        f"StockWatch EOD 알림 ({alert_date})",
-        "",
-        "아래 종목에서 조건이 충족되어 알림을 보냅니다.",
-        "",
-    ]
-
+    lines.extend(["[Watchlist] 종가가 이동평균선 이하인 종목", ""])
     for idx, item in enumerate(items, start=1):
         flow = item.foreign_flow
         lines.append(f"{idx}. {item.name} ({item.ticker})")
@@ -58,4 +55,49 @@ def make_body(triggered: Iterable[TriggeredItem], alert_date: str) -> str:
         lines.append("")
 
     lines.append("(중복 방지를 위해 같은 날짜/종목/룰 조합은 1회만 발송됩니다.)")
+    lines.append("")
+    return lines
+
+
+def make_ranking_body(
+    ranking: Iterable[RankedForeignFlowItem],
+    *,
+    top_n: int,
+    window_trading_days: int,
+    unit: str,
+) -> list[str]:
+    rows = list(ranking)
+    lines: list[str] = [
+        f"[KOSPI 상위 {top_n} 시총 종목] 최근 {window_trading_days}영업일 외국인 순매수 내림차순",
+        f"(표시: 종목명 | 현재가 | 외국인 순매수[{ '거래대금' if unit == 'value' else '거래량' }])",
+        "",
+    ]
+
+    for idx, item in enumerate(rows, start=1):
+        lines.append(
+            f"{idx:>3}. {item.name} ({item.ticker}) | {item.close:,.0f}원 | {format_number(item.net_sum, unit)}"
+        )
+
+    lines.append("")
+    return lines
+
+
+def make_body(
+    triggered: Iterable[TriggeredItem],
+    ranking: Iterable[RankedForeignFlowItem],
+    alert_date: str,
+    *,
+    ranking_top_n: int,
+    ranking_window_trading_days: int,
+    ranking_unit: str,
+) -> str:
+    lines = make_watchlist_body(triggered, alert_date)
+    lines.extend(
+        make_ranking_body(
+            ranking,
+            top_n=ranking_top_n,
+            window_trading_days=ranking_window_trading_days,
+            unit=ranking_unit,
+        )
+    )
     return "\n".join(lines)

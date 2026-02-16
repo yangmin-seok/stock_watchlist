@@ -3,10 +3,14 @@ smtp:
   host: "smtp.gmail.com"
   port: 587
   use_starttls: true
-rate_limit_sec: 1.0
+rate_limit_sec: 0.2
 defaults:
   ohlcv_calendar_lookback_days: 220
   foreign_calendar_lookback_days: 60
   foreign_window_trading_days: 20
-  ma_touch_tolerance_pct: 0.3
+ranking:
+  top_n: 400
+  unit: "value"
+  calendar_lookback_days: 60
+  window_trading_days: 20
 state_db_path: "state.db"

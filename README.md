@@ -1,13 +1,14 @@
 # stock_watchlist
-외국인 수급 + 이동평균 룰(EOD) 기반 메일 알림 미니 프로젝트.
+종가 기준 Watchlist MA 조건 + KOSPI 상위 400 외국인 수급 랭킹 메일 프로젝트.
 
-## MVP 목표
-1. **Watchlist 감시(EOD)**
-   - 종가 기준 MA60 터치 / 상향돌파 등 룰 평가
-   - 트리거 발생 시 Gmail SMTP로 이메일 발송
-2. **외국인 수급 리포트 포함**
-   - 최근 N영업일 외국인 매수/매도/순매수 집계(value/volume)
-   - 이메일 본문에 이유(룰 + 수급)를 함께 표시
+## 현재 전략(요청 반영)
+1. **Watchlist**
+   - 룰은 1개만 사용: `종가 <= 이동평균선(MA)`
+   - 예: MA60 기준으로 종가가 이동평균선 아래(또는 동일)일 때 트리거
+2. **시장 리포트**
+   - KOSPI 시가총액 상위 400개 종목 대상
+   - 최근 1달(기본 20영업일) 외국인 순매수 기준 내림차순 정렬
+   - 메일에 `종목명 | 현재가 | 외국인 순매수` 포함
 
 ## 프로젝트 구조
 ```text
@@ -28,20 +29,21 @@ stock_watchlist/
 
 ## 설정
 ### 1) 환경변수
-`.env.example`를 복사해서 `.env`를 만든 뒤 값 입력:
+`.env.example`를 복사해서 `.env` 생성:
 ```env
 GMAIL_USER=yourname@gmail.com
 GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
 ALERT_TO=receiver@gmail.com
 ```
-- `ALERT_TO`는 `a@x.com,b@y.com` 형태로 다중 수신자 지정 가능
+- `ALERT_TO`는 `a@x.com,b@y.com` 형태로 복수 수신자 가능
 
 ### 2) `config.yaml`
-- timezone, SMTP, rate limit, default lookback/window, state DB 경로 지정
-- 기본 SMTP는 `smtp.gmail.com:587` + STARTTLS
+- 기본 동작 파라미터 + 랭킹 파라미터
+- `ranking.top_n: 400`
+- `ranking.window_trading_days: 20` (최근 1달 근사)
 
 ### 3) `watchlist.yaml`
-- 종목, 룰, 외국인 수급 리포트 옵션 정의
+- watchlist 종목별 `ma_below_or_touch` 룰 정의
 
 ## 실행
 ```bash
@@ -53,18 +55,13 @@ python run.py
 ```
 
 옵션:
-- `--strict`: 종목 1개 처리 실패 시 즉시 에러로 중단
+- `--strict`: 특정 종목 실패 시 즉시 중단
 
 ## 동작 흐름
 1. watchlist 로드
-2. 종목별 OHLCV 조회 및 MA 룰 평가
-3. 트리거가 있는 종목만 외국인 수급 요약 계산
-4. 트리거 조합(date/ticker/rule) 중복 확인(SQLite)
-5. 메일 발송 후 state 기록
-
-## 운영 권장
-- 한국 기준 **18:20 KST** 하루 1회 실행 권장(수급 데이터 반영 시점 고려)
-- 예시 크론:
-```cron
-20 18 * * 1-5 /path/to/venv/bin/python /path/to/stock_watchlist/run.py >> /path/to/stock_watchlist/cron.log 2>&1
-```
+2. 종목별 OHLCV 조회 후 `ma_below_or_touch` 판정
+3. 트리거된 watchlist 종목의 외국인 수급 요약 계산
+4. KOSPI 시총 상위 400개 추출
+5. 상위 400개 종목의 최근 20영업일 외국인 순매수 계산 후 내림차순 정렬
+6. 메일 본문에 watchlist 결과 + 400개 랭킹 포함
+7. watchlist 트리거만 SQLite 중복 방지 기록
