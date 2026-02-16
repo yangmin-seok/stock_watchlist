@@ -1,0 +1,11 @@
+watchlist:
+  - ticker: "005490"
+    name: "POSCO홀딩스"
+    rules:
+      - id: "ma60_below_or_touch"
+        type: "ma_below_or_touch"
+        window: 60
+    foreign_flow:
+      unit: "value"
+      window_trading_days: 20
+      include_buy_sell: true
