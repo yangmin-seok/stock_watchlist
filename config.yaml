@@ -9,8 +9,11 @@ defaults:
   foreign_calendar_lookback_days: 60
   foreign_window_trading_days: 20
 ranking:
-  top_n: 400
+  top_n: 100
+  universe_top_n: 1000
   unit: "value"
   calendar_lookback_days: 60
   window_trading_days: 20
+  recent_days: 5
+  recent_days_bold_threshold: 10000000000
 state_db_path: "state.db"
