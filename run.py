@@ -106,32 +106,20 @@ def main() -> int:
     ranking_bold_threshold = float(ranking_cfg.get("recent_days_bold_threshold", 0))
 
     if not args.quiet:
-        print("[ranking] foreign start")
-    foreign_ranking = client.build_kospi_flow_ranking(
+        print("[ranking] foreign+institution start")
+    ranking_map = client.build_kospi_flow_rankings(
         top_n=ranking_top_n,
         universe_top_n=ranking_universe_top_n,
         unit=ranking_unit,
         calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
         window_trading_days=ranking_window_days,
-        investor="foreign",
         recent_days=ranking_recent_days,
-        progress_label="foreign",
+        investors=("foreign", "institution"),
+        progress_label="all",
         progress_every=100,
     )
-
-    if not args.quiet:
-        print("[ranking] institution start")
-    institution_ranking = client.build_kospi_flow_ranking(
-        top_n=ranking_top_n,
-        universe_top_n=ranking_universe_top_n,
-        unit=ranking_unit,
-        calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
-        window_trading_days=ranking_window_days,
-        investor="institution",
-        recent_days=ranking_recent_days,
-        progress_label="institution",
-        progress_every=100,
-    )
+    foreign_ranking = ranking_map["foreign"]
+    institution_ranking = ranking_map["institution"]
 
     foreign_subject = make_subject(triggered_items, alert_date, flow_label="외국인수급")
     foreign_body = make_body(

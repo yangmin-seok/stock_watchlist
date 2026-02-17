@@ -210,6 +210,21 @@ class StockDataClient:
         prev_close = float(ohlcv.iloc[-2]["종가"])
         return close, close - prev_close
 
+    @staticmethod
+    def _extract_investor_stats(
+        net_df: pd.DataFrame,
+        investor: str,
+        window_trading_days: int,
+        recent_days: int,
+    ) -> tuple[float, list[float]]:
+        if net_df.empty:
+            return 0.0, []
+        col = StockDataClient._pick_investor_column(net_df, investor=investor)
+        series = net_df[col]
+        net_sum = float(series.tail(window_trading_days).sum())
+        recent_daily_nets = [float(value) for value in series.tail(recent_days).tolist()]
+        return net_sum, recent_daily_nets
+
     def summarize_investor_net(
         self,
         ticker: str,
@@ -219,10 +234,13 @@ class StockDataClient:
         investor: str,
     ) -> float:
         net_df = self._retry_empty_df(ticker, calendar_lookback_days, unit=unit)
-        if net_df.empty:
-            return 0.0
-        col = self._pick_investor_column(net_df, investor=investor)
-        return float(net_df[col].tail(window_trading_days).sum())
+        net_sum, _ = self._extract_investor_stats(
+            net_df,
+            investor=investor,
+            window_trading_days=window_trading_days,
+            recent_days=1,
+        )
+        return net_sum
 
     def summarize_recent_daily_investor_net(
         self,
@@ -233,10 +251,13 @@ class StockDataClient:
         investor: str,
     ) -> list[float]:
         net_df = self._retry_empty_df(ticker, calendar_lookback_days, unit=unit)
-        if net_df.empty:
-            return []
-        col = self._pick_investor_column(net_df, investor=investor)
-        return [float(value) for value in net_df[col].tail(recent_days).tolist()]
+        _, recent_daily_nets = self._extract_investor_stats(
+            net_df,
+            investor=investor,
+            window_trading_days=1,
+            recent_days=recent_days,
+        )
+        return recent_daily_nets
 
     def build_kospi_flow_ranking(
         self,
@@ -250,40 +271,64 @@ class StockDataClient:
         progress_label: str | None = None,
         progress_every: int = 0,
     ) -> list[RankedForeignFlowItem]:
+        rankings = self.build_kospi_flow_rankings(
+            top_n=top_n,
+            unit=unit,
+            calendar_lookback_days=calendar_lookback_days,
+            window_trading_days=window_trading_days,
+            universe_top_n=universe_top_n,
+            recent_days=recent_days,
+            investors=(investor,),
+            progress_label=progress_label,
+            progress_every=progress_every,
+        )
+        return rankings[investor]
+
+    def build_kospi_flow_rankings(
+        self,
+        top_n: int,
+        unit: str,
+        calendar_lookback_days: int,
+        window_trading_days: int,
+        universe_top_n: int | None = None,
+        recent_days: int = 5,
+        investors: tuple[str, ...] = ("foreign", "institution"),
+        progress_label: str | None = None,
+        progress_every: int = 0,
+    ) -> dict[str, list[RankedForeignFlowItem]]:
         universe_size = universe_top_n if universe_top_n is not None else top_n
         tickers = self.get_kospi_top_tickers(universe_size)
-        ranking: list[RankedForeignFlowItem] = []
+        ranking_map: dict[str, list[RankedForeignFlowItem]] = {investor: [] for investor in investors}
 
         total = len(tickers)
         for idx, ticker in enumerate(tickers, start=1):
             if progress_label and progress_every > 0 and (idx == 1 or idx % progress_every == 0 or idx == total):
                 print(f"[ranking:{progress_label}] {idx}/{total}")
+
             name = self.get_ticker_name(ticker)
             close, close_change = self.get_latest_close_and_change(ticker)
-            net_sum = self.summarize_investor_net(
-                ticker=ticker,
-                unit=unit,
-                calendar_lookback_days=calendar_lookback_days,
-                window_trading_days=window_trading_days,
-                investor=investor,
-            )
-            recent_daily_nets = self.summarize_recent_daily_investor_net(
-                ticker=ticker,
-                unit=unit,
-                calendar_lookback_days=calendar_lookback_days,
-                recent_days=recent_days,
-                investor=investor,
-            )
-            ranking.append(
-                RankedForeignFlowItem(
-                    ticker=ticker,
-                    name=name,
-                    close=close,
-                    close_change=close_change,
-                    net_sum=net_sum,
-                    recent_daily_nets=recent_daily_nets,
-                )
-            )
+            net_df = self._retry_empty_df(ticker, calendar_lookback_days, unit=unit)
 
-        ranking.sort(key=lambda item: item.net_sum, reverse=True)
-        return ranking[:top_n]
+            for investor in investors:
+                net_sum, recent_daily_nets = self._extract_investor_stats(
+                    net_df,
+                    investor=investor,
+                    window_trading_days=window_trading_days,
+                    recent_days=recent_days,
+                )
+                ranking_map[investor].append(
+                    RankedForeignFlowItem(
+                        ticker=ticker,
+                        name=name,
+                        close=close,
+                        close_change=close_change,
+                        net_sum=net_sum,
+                        recent_daily_nets=recent_daily_nets,
+                    )
+                )
+
+        for investor in investors:
+            ranking_map[investor].sort(key=lambda item: item.net_sum, reverse=True)
+            ranking_map[investor] = ranking_map[investor][:top_n]
+
+        return ranking_map
