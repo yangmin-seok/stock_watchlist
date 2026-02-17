@@ -72,6 +72,7 @@ def main() -> int:
             for rule in item.get("rules", []):
                 result = evaluate_rule(ohlcv, rule)
                 if not result.triggered:
+                    print(f"  - rule {rule['id']} not triggered")
                     continue
                 if state.was_sent(alert_date, ticker, result.rule_id):
                     continue
