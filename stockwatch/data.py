@@ -247,12 +247,17 @@ class StockDataClient:
         investor: str,
         universe_top_n: int | None = None,
         recent_days: int = 5,
+        progress_label: str | None = None,
+        progress_every: int = 0,
     ) -> list[RankedForeignFlowItem]:
         universe_size = universe_top_n if universe_top_n is not None else top_n
         tickers = self.get_kospi_top_tickers(universe_size)
         ranking: list[RankedForeignFlowItem] = []
 
-        for ticker in tickers:
+        total = len(tickers)
+        for idx, ticker in enumerate(tickers, start=1):
+            if progress_label and progress_every > 0 and (idx == 1 or idx % progress_every == 0 or idx == total):
+                print(f"[ranking:{progress_label}] {idx}/{total}")
             name = self.get_ticker_name(ticker)
             close, close_change = self.get_latest_close_and_change(ticker)
             net_sum = self.summarize_investor_net(
