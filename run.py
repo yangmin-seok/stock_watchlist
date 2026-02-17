@@ -30,6 +30,7 @@ def main() -> int:
     parser.add_argument("--watchlist", default="watchlist.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Do not send email / write state")
     parser.add_argument("--strict", action="store_true", help="Fail fast on per-ticker errors")
+    parser.add_argument("--quiet", action="store_true", help="Reduce progress logs")
     args = parser.parse_args()
 
     load_dotenv()
@@ -50,11 +51,16 @@ def main() -> int:
     triggered_items: list[TriggeredItem] = []
     errors: list[str] = []
 
-    for item in watchlist_cfg.get("watchlist", []):
+    watchlist_items = watchlist_cfg.get("watchlist", [])
+    total_watchlist = len(watchlist_items)
+
+    for idx, item in enumerate(watchlist_items, start=1):
         ticker = item["ticker"]
         name = item.get("name", ticker)
 
         try:
+            if not args.quiet:
+                print(f"[watchlist {idx}/{total_watchlist}] {ticker} {name}")
             ohlcv = client.get_ohlcv(ticker, int(defaults["ohlcv_calendar_lookback_days"]))
             foreign_cfg = item.get("foreign_flow", {})
             foreign_unit = foreign_cfg.get("unit", "value")
@@ -99,25 +105,21 @@ def main() -> int:
     ranking_recent_days = int(ranking_cfg.get("recent_days", 5))
     ranking_bold_threshold = float(ranking_cfg.get("recent_days_bold_threshold", 0))
 
-    foreign_ranking = client.build_kospi_flow_ranking(
+    if not args.quiet:
+        print("[ranking] foreign+institution start")
+    ranking_map = client.build_kospi_flow_rankings(
         top_n=ranking_top_n,
         universe_top_n=ranking_universe_top_n,
         unit=ranking_unit,
         calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
         window_trading_days=ranking_window_days,
-        investor="foreign",
         recent_days=ranking_recent_days,
+        investors=("foreign", "institution"),
+        progress_label="all",
+        progress_every=100,
     )
-
-    institution_ranking = client.build_kospi_flow_ranking(
-        top_n=ranking_top_n,
-        universe_top_n=ranking_universe_top_n,
-        unit=ranking_unit,
-        calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
-        window_trading_days=ranking_window_days,
-        investor="institution",
-        recent_days=ranking_recent_days,
-    )
+    foreign_ranking = ranking_map["foreign"]
+    institution_ranking = ranking_map["institution"]
 
     foreign_subject = make_subject(triggered_items, alert_date, flow_label="외국인수급")
     foreign_body = make_body(
