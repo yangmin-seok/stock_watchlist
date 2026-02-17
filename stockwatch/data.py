@@ -47,6 +47,10 @@ class StockDataClient:
     def __init__(self, timezone: str, rate_limit_sec: float = 0.0):
         self.tz = ZoneInfo(timezone)
         self.rate_limit_sec = rate_limit_sec
+        self._ohlcv_cache: dict[tuple[str, str, str], pd.DataFrame] = {}
+        self._flow_cache: dict[tuple[str, str, str, str, str | None], pd.DataFrame] = {}
+        self._ticker_name_cache: dict[str, str] = {}
+        self._market_cap_cache: dict[tuple[str, str], pd.DataFrame] = {}
 
     def _today_str(self) -> str:
         return datetime.now(self.tz).strftime("%Y%m%d")
@@ -72,14 +76,18 @@ class StockDataClient:
         )
 
     def get_ohlcv(self, ticker: str, calendar_lookback_days: int) -> pd.DataFrame:
-        df = stock.get_market_ohlcv(
-            self._start_date_str(calendar_lookback_days),
-            self._today_str(),
-            ticker,
-        )
+        start = self._start_date_str(calendar_lookback_days)
+        end = self._today_str()
+        cache_key = (ticker, start, end)
+        cached = self._ohlcv_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        df = stock.get_market_ohlcv(start, end, ticker)
         self._sleep()
         if df.empty:
             raise ValueError(f"Empty OHLCV dataframe for ticker={ticker}")
+        self._ohlcv_cache[cache_key] = df
         return df
 
     def _get_flow_df(
@@ -91,6 +99,11 @@ class StockDataClient:
     ) -> pd.DataFrame:
         start = self._start_date_str(calendar_lookback_days)
         end = self._today_str()
+        cache_key = (ticker, start, end, unit, on)
+        cached = self._flow_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         if unit == "value":
             df = stock.get_market_trading_value_by_date(start, end, ticker, on=on)
         elif unit == "volume":
@@ -98,6 +111,8 @@ class StockDataClient:
         else:
             raise ValueError(f"Unsupported unit: {unit}. Use 'value' or 'volume'.")
         self._sleep()
+        if not df.empty:
+            self._flow_cache[cache_key] = df
         return df
 
     def _retry_empty_df(
@@ -161,12 +176,27 @@ class StockDataClient:
         )
 
     def get_kospi_top_tickers(self, top_n: int) -> list[str]:
-        market_cap = stock.get_market_cap_by_ticker(self._today_str(), market="KOSPI")
-        self._sleep()
+        today = self._today_str()
+        market = "KOSPI"
+        cache_key = (today, market)
+        market_cap = self._market_cap_cache.get(cache_key)
+        if market_cap is None:
+            market_cap = stock.get_market_cap_by_ticker(today, market=market)
+            self._sleep()
+            if not market_cap.empty:
+                self._market_cap_cache[cache_key] = market_cap
         if market_cap.empty:
             raise ValueError("Empty market cap dataframe for KOSPI")
         ranked = market_cap.sort_values(by="시가총액", ascending=False).head(top_n)
         return ranked.index.tolist()
+
+    def get_ticker_name(self, ticker: str) -> str:
+        cached = self._ticker_name_cache.get(ticker)
+        if cached is not None:
+            return cached
+        name = stock.get_market_ticker_name(ticker)
+        self._ticker_name_cache[ticker] = name
+        return name
 
     def get_latest_close_and_change(
         self,
@@ -223,7 +253,7 @@ class StockDataClient:
         ranking: list[RankedForeignFlowItem] = []
 
         for ticker in tickers:
-            name = stock.get_market_ticker_name(ticker)
+            name = self.get_ticker_name(ticker)
             close, close_change = self.get_latest_close_and_change(ticker)
             net_sum = self.summarize_investor_net(
                 ticker=ticker,
