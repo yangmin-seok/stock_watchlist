@@ -23,12 +23,15 @@ def send_email(
     to_addr: str,
     subject: str,
     body: str,
+    html_body: str | None = None,
 ) -> None:
     msg = EmailMessage()
     msg["From"] = user
     msg["To"] = to_addr
     msg["Subject"] = subject
     msg.set_content(body)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
 
     normalized_password = _normalize_app_password(app_password)
 

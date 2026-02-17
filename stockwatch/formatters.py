@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html
+import re
 from typing import Iterable
 
 from stockwatch.data import ForeignFlowSummary, RankedForeignFlowItem
 from stockwatch.rules import RuleResult
+
+RECENT_SUM_HIGHLIGHT_THRESHOLD_VALUE = 30_000_000_000  # 300억원
 
 
 @dataclass
@@ -27,21 +31,30 @@ def format_signed_won(value: float) -> str:
     return f"{sign}{value:,.0f}원"
 
 
-def format_recent_daily_nets(
-    values: list[float],
-    unit: str,
-    bold_threshold: float,
-) -> str:
+def format_recent_sum(values: list[float], unit: str) -> str:
     if not values:
         return "-"
+    return format_number(float(sum(values)), unit)
 
-    formatted: list[str] = []
-    for value in values:
-        token = format_number(value, unit)
-        if abs(value) >= bold_threshold > 0:
-            token = f"**{token}**"
-        formatted.append(token)
-    return ", ".join(formatted)
+
+
+
+def emphasize_recent_sum(token: str, *, recent_sum_value: float, unit: str, recent_days: int) -> str:
+    should_emphasize = (
+        unit == "value"
+        and recent_days >= 5
+        and abs(recent_sum_value) >= RECENT_SUM_HIGHLIGHT_THRESHOLD_VALUE
+    )
+    if not should_emphasize:
+        return token
+    return f"★{token}★"
+
+def format_rule_trigger(rule_id: str) -> str:
+    if rule_id.startswith("ma") and rule_id.endswith("_below_or_touch"):
+        window = rule_id[len("ma") : -len("_below_or_touch")]
+        if window.isdigit():
+            return f"{window}일 이동평균선 하회(또는 접촉)"
+    return rule_id
 
 
 def make_subject(triggered: Iterable[TriggeredItem], alert_date: str, flow_label: str) -> str:
@@ -65,8 +78,8 @@ def make_watchlist_body(triggered: Iterable[TriggeredItem], alert_date: str) -> 
     for idx, item in enumerate(items, start=1):
         flow = item.foreign_flow
         lines.append(f"{idx}. {item.name} ({item.ticker})")
-        lines.append(f"   - Trigger: {item.rule_result.rule_id}")
-        lines.append(f"   - Detail: {item.rule_result.message}")
+        lines.append(f"   - 조건: {format_rule_trigger(item.rule_result.rule_id)}")
+        lines.append(f"   - 설명: {item.rule_result.message}")
         lines.append(
             f"   - 최근 {flow.window_trading_days}영업일 외국인 순매수: {format_number(flow.net_sum, flow.unit)}"
         )
@@ -95,18 +108,21 @@ def make_ranking_body(
     rows = list(ranking)
     lines: list[str] = [
         f"[KOSPI 시총 상위 {universe_top_n}개 중 {investor_label} 순매수 상위 {top_n}] 최근 {window_trading_days}영업일",
-        f"(표시: 종목명 | 현재가(전일대비) | {investor_label} 순매수[{ '거래대금' if unit == 'value' else '거래량' }] | 최근 {recent_days}일)",
+        f"(표시: 종목명 | 현재가(전일대비) | {investor_label} 순매수[{ '거래대금' if unit == 'value' else '거래량' }] | 최근 {recent_days}일 합)",
         "",
     ]
 
     for idx, item in enumerate(rows, start=1):
-        recent = format_recent_daily_nets(
-            item.recent_daily_nets,
+        recent_sum_value = float(sum(item.recent_daily_nets)) if item.recent_daily_nets else 0.0
+        recent_sum = format_recent_sum(item.recent_daily_nets, unit=unit)
+        recent_sum = emphasize_recent_sum(
+            recent_sum,
+            recent_sum_value=recent_sum_value,
             unit=unit,
-            bold_threshold=recent_days_bold_threshold,
+            recent_days=recent_days,
         )
         lines.append(
-            f"{idx:>3}. {item.name} ({item.ticker}) | {item.close:,.0f}원 ({format_signed_won(item.close_change)}) | {format_number(item.net_sum, unit)} ({recent})"
+            f"{idx:>3}. {item.name} ({item.ticker}) | {item.close:,.0f}원 ({format_signed_won(item.close_change)}) | {format_number(item.net_sum, unit)} (최근 {recent_days}일 합 {recent_sum})"
         )
 
     lines.append("")
@@ -140,3 +156,20 @@ def make_body(
         )
     )
     return "\n".join(lines)
+
+
+HIGHLIGHT_TOKEN_PATTERN = re.compile(r"★([^★]+)★")
+
+
+def make_html_body(text_body: str) -> str:
+    escaped = html.escape(text_body)
+    highlighted = HIGHLIGHT_TOKEN_PATTERN.sub(
+        lambda m: f'<span style="color:#d32f2f;font-weight:700;">{m.group(1)}</span>',
+        escaped,
+    )
+    rendered = highlighted.replace("\n", "<br>\n")
+    return (
+        '<html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.45;">'
+        f"{rendered}"
+        "</body></html>"
+    )

@@ -9,7 +9,7 @@ import yaml
 from dotenv import load_dotenv
 
 from stockwatch.data import StockDataClient
-from stockwatch.formatters import TriggeredItem, make_body, make_subject
+from stockwatch.formatters import TriggeredItem, make_body, make_html_body, make_subject
 from stockwatch.notifier import MailAuthenticationError, send_email
 from stockwatch.rules import evaluate_rule
 from stockwatch.state import AlertStateStore
@@ -150,12 +150,17 @@ def main() -> int:
         ranking_recent_days_bold_threshold=ranking_bold_threshold,
     )
 
+    foreign_html_body = make_html_body(foreign_body)
+    institution_html_body = make_html_body(institution_body)
+
     if errors:
         warning_block = "\n[경고] 일부 watchlist 종목 처리 중 오류:\n" + "\n".join(
             f"- {message}" for message in errors
         )
         foreign_body += warning_block
         institution_body += warning_block
+        foreign_html_body = make_html_body(foreign_body)
+        institution_html_body = make_html_body(institution_body)
 
     if args.dry_run:
         print("=" * 80)
@@ -187,6 +192,7 @@ def main() -> int:
                 to_addr=to_addr,
                 subject=foreign_subject,
                 body=foreign_body,
+                html_body=foreign_html_body,
             )
             send_email(
                 smtp_host=smtp_cfg["host"],
@@ -197,6 +203,7 @@ def main() -> int:
                 to_addr=to_addr,
                 subject=institution_subject,
                 body=institution_body,
+                html_body=institution_html_body,
             )
     except MailAuthenticationError as exc:
         print(f"[{alert_date}] {exc}")
