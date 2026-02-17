@@ -9,3 +9,13 @@ watchlist:
       unit: "value"
       window_trading_days: 20
       include_buy_sell: true
+  - ticker: "035420"
+    name: "NAVER"
+    rules:
+      - id: "ma20_below_or_touch"
+        type: "ma_below_or_touch"
+        window: 20
+    foreign_flow:
+      unit: "value"
+      window_trading_days: 20
+      include_buy_sell: true
