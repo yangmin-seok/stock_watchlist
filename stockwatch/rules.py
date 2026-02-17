@@ -32,10 +32,13 @@ def evaluate_ma_below_or_touch(df: pd.DataFrame, rule_id: str, window: int) -> R
     ma = float(today[ma_col])
     triggered = close <= ma
 
+    relation = "이하" if triggered else "초과"
     return RuleResult(
         rule_id=rule_id,
         triggered=triggered,
-        message=f"MA{window} below/touch check: close={close:,.0f}, ma={ma:,.2f}, close<=ma={triggered}",
+        message=(
+            f"종가({close:,.0f}원)가 {window}일 이동평균({ma:,.0f}원) {relation}입니다."
+        ),
     )
 
 
