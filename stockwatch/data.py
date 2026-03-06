@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 import warnings
 from dataclasses import dataclass
@@ -176,17 +177,61 @@ class StockDataClient:
         )
 
     def get_kospi_top_tickers(self, top_n: int) -> list[str]:
-        today = self._today_str()
         market = "KOSPI"
-        cache_key = (today, market)
-        market_cap = self._market_cap_cache.get(cache_key)
-        if market_cap is None:
-            market_cap = stock.get_market_cap_by_ticker(today, market=market)
-            self._sleep()
-            if not market_cap.empty:
-                self._market_cap_cache[cache_key] = market_cap
-        if market_cap.empty:
-            raise ValueError("Empty market cap dataframe for KOSPI")
+        now = datetime.now(self.tz)
+        max_fallback_days = 10
+        required_cols = {"시가총액"}
+        recommended_cols = {"종가", "거래량", "거래대금"}
+
+        last_exception: Exception | None = None
+        last_columns: list[str] = []
+        market_cap = pd.DataFrame()
+
+        for offset in range(max_fallback_days):
+            candidate_date = (now - timedelta(days=offset)).strftime("%Y%m%d")
+            cache_key = (candidate_date, market)
+            market_cap = self._market_cap_cache.get(cache_key, pd.DataFrame())
+
+            if market_cap.empty:
+                try:
+                    market_cap = stock.get_market_cap_by_ticker(candidate_date, market=market)
+                    self._sleep()
+                except KeyError as exc:
+                    logging.warning(
+                        "KeyError while fetching market cap (date=%s, market=%s): %s",
+                        candidate_date,
+                        market,
+                        exc,
+                    )
+                    last_exception = exc
+                    continue
+                except Exception as exc:  # pragma: no cover - defensive branch
+                    last_exception = exc
+                    continue
+
+            columns = set(market_cap.columns)
+            if market_cap.empty or not required_cols.issubset(columns):
+                last_columns = market_cap.columns.tolist()
+                continue
+
+            missing_recommended = recommended_cols - columns
+            if missing_recommended:
+                logging.info(
+                    "Market cap dataframe missing recommended columns (date=%s, market=%s): %s",
+                    candidate_date,
+                    market,
+                    sorted(missing_recommended),
+                )
+
+            self._market_cap_cache[cache_key] = market_cap
+            break
+        else:
+            raise ValueError(
+                "Failed to fetch valid KOSPI market cap dataframe "
+                f"for last {max_fallback_days} days. "
+                f"last_exception={last_exception!r}, last_columns={last_columns}"
+            )
+
         ranked = market_cap.sort_values(by="시가총액", ascending=False).head(top_n)
         return ranked.index.tolist()
 
