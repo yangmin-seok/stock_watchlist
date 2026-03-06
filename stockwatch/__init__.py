@@ -6,4 +6,5 @@ __all__ = [
     "notifier",
     "state",
     "formatters",
+    "krx_auth",
 ]

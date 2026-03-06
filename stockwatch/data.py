@@ -3,12 +3,23 @@ from __future__ import annotations
 import logging
 import time
 import warnings
+from typing import Literal
+
+import requests
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 from pykrx import stock
+
+from stockwatch.krx_auth import (
+    LOGIN_FAILURE_CODE,
+    LOGIN_SUCCESS_CODE,
+    install_pykrx_session_wrappers,
+    login_krx,
+    mask_credential,
+)
 
 INVESTOR_COLUMN_CANDIDATES = {
     "foreign": ["외국인합계", "외국인", "외국인투자자"],
@@ -45,13 +56,79 @@ class RankedForeignFlowItem:
 
 
 class StockDataClient:
-    def __init__(self, timezone: str, rate_limit_sec: float = 0.0):
+    def __init__(
+        self,
+        timezone: str,
+        rate_limit_sec: float = 0.0,
+        *,
+        krx_enable_login: bool = False,
+        krx_login_id: str | None = None,
+        krx_login_pw: str | None = None,
+        krx_login_fail_policy: Literal["continue", "raise"] = "continue",
+    ):
         self.tz = ZoneInfo(timezone)
         self.rate_limit_sec = rate_limit_sec
         self._ohlcv_cache: dict[tuple[str, str, str], pd.DataFrame] = {}
         self._flow_cache: dict[tuple[str, str, str, str, str | None], pd.DataFrame] = {}
         self._ticker_name_cache: dict[str, str] = {}
         self._market_cap_cache: dict[tuple[str, str], pd.DataFrame] = {}
+        self._session = requests.Session()
+        install_pykrx_session_wrappers(self._session)
+        self._logger = logging.getLogger(__name__)
+        self._krx_enable_login = krx_enable_login
+        self._krx_login_fail_policy = krx_login_fail_policy
+
+        if self._krx_enable_login:
+            self._configure_krx_login(krx_login_id=krx_login_id, krx_login_pw=krx_login_pw)
+
+
+    def _configure_krx_login(self, krx_login_id: str | None, krx_login_pw: str | None) -> None:
+        if not krx_login_id or not krx_login_pw:
+            message = "KRX login enabled but missing credentials. Continue without authentication."
+            if self._krx_login_fail_policy == "raise":
+                raise RuntimeError(message)
+            self._logger.warning(message)
+            return
+
+        try:
+            result = login_krx(
+                self._session,
+                krx_login_id,
+                krx_login_pw,
+                logger=self._logger,
+            )
+        except Exception as exc:
+            message = (
+                "KRX login request failed for id=%s: %s"
+                % (mask_credential(krx_login_id), exc)
+            )
+            if self._krx_login_fail_policy == "raise":
+                raise RuntimeError(message) from exc
+            self._logger.warning("%s; continuing in unauthenticated mode.", message)
+            return
+
+        if result.success and result.code == LOGIN_SUCCESS_CODE:
+            self._logger.info(
+                "KRX login succeeded with code=%s for id=%s",
+                result.code,
+                mask_credential(krx_login_id),
+            )
+            return
+
+        if result.code == LOGIN_FAILURE_CODE:
+            message = (
+                "KRX login failed with code=%s for id=%s: %s"
+                % (result.code, mask_credential(krx_login_id), result.message)
+            )
+        else:
+            message = (
+                "KRX login did not succeed (code=%s) for id=%s: %s"
+                % (result.code, mask_credential(krx_login_id), result.message)
+            )
+
+        if self._krx_login_fail_policy == "raise":
+            raise RuntimeError(message)
+        self._logger.warning("%s; continuing in unauthenticated mode.", message)
 
     def _today_str(self) -> str:
         return datetime.now(self.tz).strftime("%Y%m%d")

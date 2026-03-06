@@ -38,8 +38,17 @@ stock_watchlist/
 GMAIL_USER=yourname@gmail.com
 GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
 ALERT_TO=receiver@gmail.com
+
+# Optional KRX login (sensitive values are env-only)
+KRX_ENABLE_LOGIN=false
+KRX_LOGIN_ID=your_krx_id
+KRX_LOGIN_PW=your_krx_password
+KRX_LOGIN_FAIL_POLICY=continue  # continue | raise
 ```
 - `ALERT_TO`는 `a@x.com,b@y.com` 형태로 복수 수신자 가능
+- KRX 인증은 선택 기능이며, 민감정보(`KRX_LOGIN_ID`, `KRX_LOGIN_PW`)는 환경변수로만 받습니다.
+- 로그인 응답 코드 `CD001`(성공), `CD011`(실패)을 명시 처리합니다.
+- 로그인 실패 시 `KRX_LOGIN_FAIL_POLICY=continue`면 비인증 모드로 계속, `raise`면 즉시 중단합니다.
 
 ### 2) `config.yaml`
 - 기본 동작 파라미터 + 랭킹 파라미터
@@ -48,6 +57,8 @@ ALERT_TO=receiver@gmail.com
 - `ranking.window_trading_days: 20` (최근 1달 근사)
 - `ranking.recent_days: 5` (괄호로 표기할 최근 일수)
 - `ranking.recent_days_bold_threshold: 10000000000` (거래대금 기준 100억원, 절대값 이상 bold)
+- `krx.enable_login`: KRX 로그인 기본 활성화 여부(환경변수 `KRX_ENABLE_LOGIN`가 우선)
+- `krx.login_fail_policy`: 로그인 실패 처리 정책(`continue` 또는 `raise`, 환경변수 `KRX_LOGIN_FAIL_POLICY` 우선)
 
 ### 3) `watchlist.yaml`
 - watchlist 종목별 `ma_below_or_touch` 룰 정의
