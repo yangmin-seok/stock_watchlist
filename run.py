@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -20,6 +21,29 @@ def load_yaml(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+
+
+def _parse_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _resolve_krx_settings(config: dict) -> tuple[bool, str | None, str | None, str]:
+    krx_cfg = config.get("krx", {})
+
+    enable_default = bool(krx_cfg.get("enable_login", False))
+    krx_enable_login = _parse_bool(os.getenv("KRX_ENABLE_LOGIN"), default=enable_default)
+
+    krx_login_id = os.getenv("KRX_LOGIN_ID")
+    krx_login_pw = os.getenv("KRX_LOGIN_PW")
+
+    fail_policy = str(os.getenv("KRX_LOGIN_FAIL_POLICY") or krx_cfg.get("login_fail_policy", "continue")).strip().lower()
+    if fail_policy not in {"continue", "raise"}:
+        raise ValueError("KRX_LOGIN_FAIL_POLICY must be one of: continue, raise")
+
+    return krx_enable_login, krx_login_id, krx_login_pw, fail_policy
+
 def _split_recipients(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
@@ -34,6 +58,7 @@ def main() -> int:
     args = parser.parse_args()
 
     load_dotenv()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     config = load_yaml(args.config)
     watchlist_cfg = load_yaml(args.watchlist)
@@ -45,7 +70,16 @@ def main() -> int:
     defaults = config["defaults"]
     ranking_cfg = config["ranking"]
 
-    client = StockDataClient(timezone=timezone, rate_limit_sec=float(config.get("rate_limit_sec", 0.0)))
+    krx_enable_login, krx_login_id, krx_login_pw, krx_login_fail_policy = _resolve_krx_settings(config)
+
+    client = StockDataClient(
+        timezone=timezone,
+        rate_limit_sec=float(config.get("rate_limit_sec", 0.0)),
+        krx_enable_login=krx_enable_login,
+        krx_login_id=krx_login_id,
+        krx_login_pw=krx_login_pw,
+        krx_login_fail_policy=krx_login_fail_policy,
+    )
     state = AlertStateStore(config.get("state_db_path", "state.db"))
 
     triggered_items: list[TriggeredItem] = []

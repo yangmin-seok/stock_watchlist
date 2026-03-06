@@ -17,3 +17,8 @@ ranking:
   recent_days: 5
   recent_days_bold_threshold: 10000000000
 state_db_path: "state.db"
+
+krx:
+  enable_login: false
+  login_fail_policy: "continue"
+
