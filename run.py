@@ -59,6 +59,8 @@ def main() -> int:
 
     load_dotenv()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # pykrx emits noisy logging formatting errors that can hide actionable failures.
+    logging.getLogger("pykrx.website.comm.util").setLevel(logging.WARNING)
 
     config = load_yaml(args.config)
     watchlist_cfg = load_yaml(args.watchlist)
@@ -142,17 +144,26 @@ def main() -> int:
 
     if not args.quiet:
         print("[ranking] foreign+institution start")
-    ranking_map = client.build_kospi_flow_rankings(
-        top_n=ranking_top_n,
-        universe_top_n=ranking_universe_top_n,
-        unit=ranking_unit,
-        calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
-        window_trading_days=ranking_window_days,
-        recent_days=ranking_recent_days,
-        investors=("foreign", "institution"),
-        progress_label="all",
-        progress_every=100,
-    )
+    ranking_degraded = False
+    try:
+        ranking_map = client.build_kospi_flow_rankings(
+            top_n=ranking_top_n,
+            universe_top_n=ranking_universe_top_n,
+            unit=ranking_unit,
+            calendar_lookback_days=int(ranking_cfg["calendar_lookback_days"]),
+            window_trading_days=ranking_window_days,
+            recent_days=ranking_recent_days,
+            investors=("foreign", "institution"),
+            progress_label="all",
+            progress_every=100,
+        )
+    except Exception as exc:
+        ranking_degraded = True
+        if args.strict:
+            raise
+        logging.warning("[ranking] failed; continue without ranking data: %s", exc)
+        ranking_map = {"foreign": [], "institution": []}
+
     foreign_ranking = ranking_map["foreign"]
     institution_ranking = ranking_map["institution"]
 
@@ -193,6 +204,13 @@ def main() -> int:
         )
         foreign_body += warning_block
         institution_body += warning_block
+        foreign_html_body = make_html_body(foreign_body)
+        institution_html_body = make_html_body(institution_body)
+
+    if ranking_degraded:
+        ranking_warning = "\n[경고] KOSPI 수급 랭킹 조회 실패로 랭킹을 비운 상태로 발송합니다."
+        foreign_body += ranking_warning
+        institution_body += ranking_warning
         foreign_html_body = make_html_body(foreign_body)
         institution_html_body = make_html_body(institution_body)
 
