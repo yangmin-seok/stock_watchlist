@@ -225,6 +225,10 @@ def main() -> int:
         print(institution_body)
         return 0
 
+    if errors or ranking_degraded:
+        print(f"[{alert_date}] 수집 실패가 있어 이메일 발송을 건너뜁니다.")
+        return 1
+
     gmail_user = os.getenv("GMAIL_USER")
     gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
     alert_to = os.getenv("ALERT_TO")
