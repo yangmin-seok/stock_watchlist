@@ -6,6 +6,7 @@ import warnings
 from typing import Literal
 
 import requests
+from requests.exceptions import JSONDecodeError as RequestsJSONDecodeError
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -202,12 +203,43 @@ class StockDataClient:
         retries: int = 2,
     ) -> pd.DataFrame:
         last_df = pd.DataFrame()
+        last_exception: Exception | None = None
         for attempt in range(retries + 1):
-            last_df = self._get_flow_df(ticker, calendar_lookback_days, unit=unit, on=on)
+            try:
+                last_df = self._get_flow_df(ticker, calendar_lookback_days, unit=unit, on=on)
+            except (RequestsJSONDecodeError, requests.RequestException, KeyError) as exc:
+                last_exception = exc
+                self._logger.warning(
+                    "Flow fetch retryable error (ticker=%s, unit=%s, on=%s, attempt=%s/%s): %s: %s",
+                    ticker,
+                    unit,
+                    on,
+                    attempt + 1,
+                    retries + 1,
+                    type(exc).__name__,
+                    exc,
+                )
+                if attempt < retries:
+                    time.sleep(max(1.0, self.rate_limit_sec))
+                continue
             if not last_df.empty:
                 return last_df
+            self._logger.info(
+                "Flow fetch returned empty dataframe (ticker=%s, unit=%s, on=%s, attempt=%s/%s)",
+                ticker,
+                unit,
+                on,
+                attempt + 1,
+                retries + 1,
+            )
             if attempt < retries:
                 time.sleep(max(1.0, self.rate_limit_sec))
+        if last_exception is not None:
+            raise ValueError(
+                "Failed to fetch flow dataframe "
+                f"(ticker={ticker}, unit={unit}, on={on}) after {retries + 1} attempts. "
+                f"last_exception={type(last_exception).__name__}: {last_exception}"
+            ) from last_exception
         return last_df
 
     def summarize_foreign_flow(
@@ -262,10 +294,12 @@ class StockDataClient:
 
         last_exception: Exception | None = None
         last_columns: list[str] = []
+        attempted_dates: list[str] = []
         market_cap = pd.DataFrame()
 
         for offset in range(max_fallback_days):
             candidate_date = (now - timedelta(days=offset)).strftime("%Y%m%d")
+            attempted_dates.append(candidate_date)
             cache_key = (candidate_date, market)
             market_cap = self._market_cap_cache.get(cache_key, pd.DataFrame())
 
@@ -274,7 +308,7 @@ class StockDataClient:
                     market_cap = stock.get_market_cap_by_ticker(candidate_date, market=market)
                     self._sleep()
                 except KeyError as exc:
-                    logging.warning(
+                    self._logger.warning(
                         "KeyError while fetching market cap (date=%s, market=%s): %s",
                         candidate_date,
                         market,
@@ -293,7 +327,7 @@ class StockDataClient:
 
             missing_recommended = recommended_cols - columns
             if missing_recommended:
-                logging.info(
+                self._logger.info(
                     "Market cap dataframe missing recommended columns (date=%s, market=%s): %s",
                     candidate_date,
                     market,
@@ -306,6 +340,7 @@ class StockDataClient:
             raise ValueError(
                 "Failed to fetch valid KOSPI market cap dataframe "
                 f"for last {max_fallback_days} days. "
+                f"attempted_dates={attempted_dates}, "
                 f"last_exception={last_exception!r}, last_columns={last_columns}"
             )
 
